@@ -34,8 +34,12 @@ db.exec(`
     amount REAL NOT NULL,
     items TEXT NOT NULL,
     points_earned INTEGER DEFAULT 0,
+    coupon_id INTEGER,
+    coupon_name TEXT,
+    coupon_discount TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (member_id) REFERENCES members(id)
+    FOREIGN KEY (member_id) REFERENCES members(id),
+    FOREIGN KEY (coupon_id) REFERENCES coupons(id)
   );
 
   CREATE TABLE IF NOT EXISTS coupons (
@@ -76,6 +80,16 @@ db.exec(`
     active INTEGER DEFAULT 1
   );
 `);
+
+const tableInfo = db.prepare("PRAGMA table_info(orders)").all();
+const hasCouponId = tableInfo.some(col => col.name === 'coupon_id');
+if (!hasCouponId) {
+  db.exec(`
+    ALTER TABLE orders ADD COLUMN coupon_id INTEGER;
+    ALTER TABLE orders ADD COLUMN coupon_name TEXT;
+    ALTER TABLE orders ADD COLUMN coupon_discount TEXT;
+  `);
+}
 
 // ---------- Seed Data ----------
 const memberCount = db.prepare('SELECT COUNT(*) AS cnt FROM members').get().cnt;
@@ -217,22 +231,49 @@ app.put('/api/members/:id/tags', (req, res) => {
 
 // ---------- API: Orders ----------
 app.post('/api/orders', (req, res) => {
-  const { member_id, amount, items } = req.body;
+  const { member_id, amount, items, coupon_id } = req.body;
   if (!member_id || !amount || !items) return res.status(400).json({ error: '信息不完整' });
-  const points = Math.floor(amount / 10); // 1 point per 10 yuan
-  const info = db.prepare('INSERT INTO orders (member_id, amount, items, points_earned) VALUES (?, ?, ?, ?)')
-    .run(member_id, amount, items, points);
-  db.prepare(`UPDATE members SET points = points + ?, total_spent = total_spent + ?,
-    total_orders = total_orders + 1, last_purchase_at = datetime('now','localtime') WHERE id = ?`)
-    .run(points, amount, member_id);
-  // Birthday coupon: if month matches, give bonus
-  const member = db.prepare('SELECT * FROM members WHERE id = ?').get(member_id);
-  const now = new Date();
-  const bMonth = parseInt(member.birthday.split('-')[1]);
-  if (bMonth === now.getMonth() + 1) {
-    db.prepare('UPDATE members SET points = points + 100 WHERE id = ?').run(member_id);
+
+  const createOrder = db.transaction(() => {
+    let couponName = null, couponDiscount = null;
+
+    if (coupon_id) {
+      const coupon = db.prepare('SELECT * FROM coupons WHERE id = ? AND member_id = ? AND used = 0').get(coupon_id, member_id);
+      if (!coupon) {
+        throw new Error('优惠券不存在或已使用');
+      }
+      if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+        throw new Error('优惠券已过期');
+      }
+      couponName = coupon.name;
+      couponDiscount = coupon.discount;
+      db.prepare('UPDATE coupons SET used = 1 WHERE id = ?').run(coupon_id);
+    }
+
+    const points = Math.floor(amount / 10);
+    const info = db.prepare('INSERT INTO orders (member_id, amount, items, points_earned, coupon_id, coupon_name, coupon_discount) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(member_id, amount, items, points, coupon_id, couponName, couponDiscount);
+
+    db.prepare(`UPDATE members SET points = points + ?, total_spent = total_spent + ?,
+      total_orders = total_orders + 1, last_purchase_at = datetime('now','localtime') WHERE id = ?`)
+      .run(points, amount, member_id);
+
+    const member = db.prepare('SELECT * FROM members WHERE id = ?').get(member_id);
+    const now = new Date();
+    const bMonth = parseInt(member.birthday.split('-')[1]);
+    if (bMonth === now.getMonth() + 1) {
+      db.prepare('UPDATE members SET points = points + 100 WHERE id = ?').run(member_id);
+    }
+
+    return { id: info.lastInsertRowid, points_earned: points, coupon_name: couponName };
+  });
+
+  try {
+    const result = createOrder();
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
-  res.json({ id: info.lastInsertRowid, points_earned: points });
 });
 
 app.get('/api/orders', (req, res) => {
@@ -265,9 +306,15 @@ app.post('/api/redeem', (req, res) => {
 
 // ---------- API: Coupons ----------
 app.get('/api/coupons', (req, res) => {
-  const { member_id } = req.query;
+  const { member_id, available } = req.query;
   if (!member_id) return res.json([]);
-  res.json(db.prepare('SELECT * FROM coupons WHERE member_id = ? ORDER BY created_at DESC').all(member_id));
+  let sql = 'SELECT * FROM coupons WHERE member_id = ?';
+  const params = [member_id];
+  if (available === 'true') {
+    sql += ' AND used = 0 AND (expires_at IS NULL OR expires_at >= date(\'now\',\'localtime\'))';
+  }
+  sql += ' ORDER BY created_at DESC';
+  res.json(db.prepare(sql).all(...params));
 });
 
 // ---------- API: Notifications ----------

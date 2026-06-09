@@ -302,10 +302,12 @@ function renderMemberDetail(el) {
     <div id="tab-orders" class="tab-content active">
       <div class="card">
         ${m.orders?.length ? `<div class="table-wrap"><table>
-          <thead><tr><th>日期</th><th>商品</th><th>金额</th><th>获得积分</th></tr></thead>
+          <thead><tr><th>日期</th><th>商品</th><th>金额</th><th>优惠券</th><th>获得积分</th></tr></thead>
           <tbody>${m.orders.map(o=>`<tr>
             <td>${o.created_at?.slice(0,10)}</td><td>${o.items}</td>
-            <td style="font-weight:600">¥${o.amount}</td><td><span class="badge badge-pink">+${o.points_earned}</span></td>
+            <td style="font-weight:600">¥${o.amount}</td>
+            <td>${o.coupon_name ? `<span class="badge badge-amber" title="${o.coupon_discount}">${o.coupon_name}</span>` : '-'}</td>
+            <td><span class="badge badge-pink">+${o.points_earned}</span></td>
           </tr>`).join('')}</tbody>
         </table></div>` : '<div class="empty"><div class="empty-icon">📋</div><p>暂无消费记录</p></div>'}
       </div>
@@ -350,10 +352,16 @@ async function renderPurchase(el) {
       <form id="purchaseForm">
         <div class="form-group">
           <label>选择会员 *</label>
-          <select id="purMember" required>
+          <select id="purMember" required onchange="loadMemberCoupons()">
             <option value="">请选择会员...</option>
             ${ms.map(m=>`<option value="${m.id}">${m.name} (${m.phone}) - 积分:${m.points}</option>`).join('')}
           </select>
+        </div>
+        <div id="couponSection" style="display:none">
+          <div class="form-group">
+            <label>可用优惠券</label>
+            <div id="couponList"></div>
+          </div>
         </div>
         <div class="form-group">
           <label>商品信息 *</label>
@@ -373,6 +381,7 @@ async function renderPurchase(el) {
   document.getElementById('purchaseForm').addEventListener('submit', async e => {
     e.preventDefault();
     try {
+      const couponId = document.querySelector('input[name="purCoupon"]:checked')?.value;
       const res = await api('/api/orders', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
@@ -380,12 +389,50 @@ async function renderPurchase(el) {
           member_id: document.getElementById('purMember').value,
           amount: parseFloat(document.getElementById('purAmount').value),
           items: document.getElementById('purItems').value,
+          coupon_id: couponId ? parseInt(couponId) : null,
         })
       });
-      toast(`消费录入成功！获得 ${res.points_earned} 积分`);
+      let msg = `消费录入成功！获得 ${res.points_earned} 积分`;
+      if (res.coupon_name) msg += `，已核销「${res.coupon_name}」`;
+      toast(msg);
       e.target.reset();
+      document.getElementById('couponSection').style.display = 'none';
+      document.getElementById('couponList').innerHTML = '';
     } catch(err) { toast(err.message, true); }
   });
+}
+
+async function loadMemberCoupons() {
+  const memberId = document.getElementById('purMember').value;
+  const section = document.getElementById('couponSection');
+  const list = document.getElementById('couponList');
+  if (!memberId) {
+    section.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  const coupons = await api(`/api/coupons?member_id=${memberId}&available=true`);
+  if (coupons.length === 0) {
+    section.style.display = 'block';
+    list.innerHTML = '<div style="color:var(--slate-400);font-size:13px;padding:10px 0">该会员暂无可用优惠券</div>';
+    return;
+  }
+  section.style.display = 'block';
+  list.innerHTML = `
+    <label style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px solid var(--slate-200);border-radius:var(--radius-sm);margin-bottom:8px;cursor:pointer">
+      <input type="radio" name="purCoupon" value="" checked>
+      <span style="color:var(--slate-500)">不使用优惠券</span>
+    </label>
+    ${coupons.map(c=>`
+      <label style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:2px solid var(--pink-200);border-radius:var(--radius-sm);margin-bottom:8px;cursor:pointer;background:var(--pink-50)">
+        <input type="radio" name="purCoupon" value="${c.id}">
+        <div style="flex:1">
+          <div style="font-weight:600;color:var(--pink-700)">${c.name}</div>
+          <div style="font-size:12px;color:var(--slate-500)">${c.discount} | 有效期至 ${c.expires_at||'永久'}</div>
+        </div>
+      </label>
+    `).join('')}
+  `;
 }
 
 // -------- Redeem --------
@@ -620,9 +667,9 @@ async function loadMemberCenter() {
       <div class="card-header"><h3>消费记录</h3></div>
       ${m.orders.length ? m.orders.slice(0,10).map(o=>`
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--slate-50)">
-          <div>
+          <div style="flex:1">
             <div style="font-weight:500">${o.items}</div>
-            <div style="font-size:12px;color:var(--slate-400)">${o.created_at?.slice(0,10)}</div>
+            <div style="font-size:12px;color:var(--slate-400)">${o.created_at?.slice(0,10)}${o.coupon_name ? ` · 用券: ${o.coupon_name}` : ''}</div>
           </div>
           <div style="text-align:right">
             <div style="font-weight:600;color:var(--slate-700)">¥${o.amount}</div>
