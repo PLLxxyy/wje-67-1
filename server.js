@@ -238,11 +238,15 @@ app.post('/api/orders', (req, res) => {
     let couponName = null, couponDiscount = null;
 
     if (coupon_id) {
-      const coupon = db.prepare('SELECT * FROM coupons WHERE id = ? AND member_id = ? AND used = 0').get(coupon_id, member_id);
+      const coupon = db.prepare(`
+        SELECT * FROM coupons 
+        WHERE id = ? AND member_id = ? AND used = 0 
+        AND (expires_at IS NULL OR expires_at >= date('now','localtime'))
+      `).get(coupon_id, member_id);
       if (!coupon) {
-        throw new Error('优惠券不存在或已使用');
-      }
-      if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+        const exists = db.prepare('SELECT * FROM coupons WHERE id = ? AND member_id = ?').get(coupon_id, member_id);
+        if (!exists) throw new Error('优惠券不存在');
+        if (exists.used) throw new Error('优惠券已使用');
         throw new Error('优惠券已过期');
       }
       couponName = coupon.name;
