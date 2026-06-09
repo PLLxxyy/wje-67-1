@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>花语花店 - 会员管理系统</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo">
+      <h1>花语花店</h1>
+      <p>会员管理系统</p>
+    </div>
+    <nav>
+      <a href="#" class="nav-link active" data-page="dashboard"><span class="icon">📊</span><span>数据总览</span></a>
+      <a href="#" class="nav-link" data-page="register"><span class="icon">📱</span><span>扫码注册</span></a>
+      <a href="#" class="nav-link" data-page="members"><span class="icon">👥</span><span>会员管理</span></a>
+      <a href="#" class="nav-link" data-page="purchase"><span class="icon">🛒</span><span>消费录入</span></a>
+      <a href="#" class="nav-link" data-page="redeem"><span class="icon">🎁</span><span>积分兑换</span></a>
+      <a href="#" class="nav-link" data-page="birthdays"><span class="icon">🎂</span><span>生日提醒</span></a>
+      <a href="#" class="nav-link" data-page="notifications"><span class="icon">📢</span><span>消息通知</span></a>
+      <a href="#" class="nav-link" data-page="member-center"><span class="icon">🌸</span><span>会员中心</span></a>
+    </nav>
+  </aside>
+  <main class="main" id="content"></main>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "flower-shop-membership",
+  "version": "1.0.0",
+  "description": "花店会员管理系统",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^9.4.3",
+    "node-cron": "^3.0.3"
+  }
+}
